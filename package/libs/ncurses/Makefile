@@ -108,8 +108,8 @@ MAKE_FLAGS += \
 define Build/Install/Default
 	$(MAKE_VARS) \
 	$(MAKE) -C $(PKG_BUILD_DIR)/$(MAKE_PATH) \
-		$(MAKE_INSTALL_FLAGS) \
-		$(1) install.libs install.data;
+		DESTDIR="$(PKG_INSTALL_DIR)" \
+		$(1) install.libs install.data install.includes;
 endef
 
 define Package/terminfo/install
@@ -185,9 +185,26 @@ define Build/InstallDev
 		$(1)/usr/lib/pkgconfig/ncursesw.pc
 endef
 
+HOST_MAKE_FLAGS += libs
+
 define Host/Compile
-	$(MAKE) -C $(HOST_BUILD_DIR) libs
+	+$(HOST_MAKE_VARS) $(MAKE) $(HOST_JOBS) -C $(HOST_BUILD_DIR) $(HOST_MAKE_FLAGS)
 	$(MAKE) -C $(HOST_BUILD_DIR)/progs tic
+endef
+
+define Host/Install
+	$(INSTALL_DIR) $(HOST_BUILD_PREFIX)/bin
+	$(INSTALL_BIN) $(HOST_BUILD_DIR)/progs/tic $(HOST_BUILD_PREFIX)/bin/tic
+endef
+
+define Host/Configure
+	$(call Host/Configure/Default)
+	$(SCRIPT_DIR)/fix-ncurses-makefiles.sh $(HOST_BUILD_DIR)
+endef
+
+define Build/Configure
+	$(call Build/Configure/Default)
+	$(SCRIPT_DIR)/fix-ncurses-makefiles.sh $(PKG_BUILD_DIR)
 endef
 
 $(eval $(call HostBuild))

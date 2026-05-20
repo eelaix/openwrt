@@ -1,0 +1,105 @@
+From: OpenWrt <openwrt@openwrt.org>
+Subject: power: supply: cw2015: handle ENODEV and add charger-psy-name fallback
+
+
+power_supply_am_i_supplied() returns -ENODEV when the battery PSY has
+no suppliers in the DT power-supplies graph. This is normal on boards
+where the phandle link is omitted (e.g. because the charger driver
+registers multiple power_supply devices from a single DT node, making
+phandle-based resolution unreliable).
+
+Instead of logging a warning on every poll cycle or always assuming
+the charger is absent, add support for the "cellwise,charger-psy-name"
+DT property. When set, the driver looks up the named power_supply
+(e.g. "bq256xx-charger") and reads its ONLINE property directly,
+bypassing the phandle-based power_supply_am_i_supplied() path.
+
+When no named charger PSY is configured or available, silently treat
+the battery as not externally supplied (no dmesg spam).
+
+The name-based lookup retries on each poll cycle until successful, so
+probe order relative to the charger driver does not matter.
+
+Signed-off-by: OpenWrt <openwrt@openwrt.org>
+
+--- a/drivers/power/supply/cw2015_battery.c
++++ b/drivers/power/supply/cw2015_battery.c
+@@ -64,6 +64,8 @@ struct cw_battery {
+ 	struct power_supply *rk_bat;
+ 	struct power_supply_battery_info *battery;
+ 	u8 *bat_profile;
++	struct power_supply *charger_psy;
++	const char *charger_psy_name;
+
+ 	bool charger_attached;
+ 	bool battery_changed;
+@@ -342,11 +344,58 @@ static int cw_get_time_to_empty(struct
+ 	return value16 & CW2015_MASK_SOC;
+ }
+
++static void cw_try_get_charger(struct cw_battery *cw_bat)
++{
++	if (!cw_bat->charger_psy_name || cw_bat->charger_psy)
++		return;
++
++	cw_bat->charger_psy = power_supply_get_by_name(cw_bat->charger_psy_name);
++	if (cw_bat->charger_psy)
++		dev_info(cw_bat->dev, "Using charger PSY: %s\n",
++			 cw_bat->charger_psy_name);
++}
++
+ static void cw_update_charge_status(struct cw_battery *cw_bat)
+ {
+ 	int ret;
+
+ 	ret = power_supply_am_i_supplied(cw_bat->rk_bat);
++	if (ret == -ENODEV) {
++		/*
++		 * No supplier in the power_supply graph. Try the named
++		 * charger PSY fallback (cellwise,charger-psy-name).
++		 */
++		cw_try_get_charger(cw_bat);
++
++		if (cw_bat->charger_psy) {
++			union power_supply_propval val;
++
++			ret = power_supply_get_property(cw_bat->charger_psy,
++						POWER_SUPPLY_PROP_ONLINE,
++						&val);
++			if (ret == 0) {
++				bool online = !!val.intval;
++
++				if (cw_bat->charger_attached != online) {
++					cw_bat->battery_changed = true;
++					if (online)
++						cw_bat->charge_count++;
++				}
++				cw_bat->charger_attached = online;
++			}
++			return;
++		}
++
++		/*
++		 * No charger PSY available. Treat as not
++		 * externally supplied.
++		 */
++		if (cw_bat->charger_attached) {
++			cw_bat->battery_changed = true;
++			cw_bat->charger_attached = false;
++		}
++		return;
++	}
+ 	if (ret < 0) {
+ 		dev_warn(cw_bat->dev, "Failed to get supply state: %d\n", ret);
+ 	} else {
+@@ -594,6 +643,11 @@ static int cw2015_parse_properties(struct
+ 		cw_bat->poll_interval_ms = CW2015_DEFAULT_POLL_INTERVAL_MS;
+ 	}
+
++
++	ret = device_property_read_string(dev, "cellwise,charger-psy-name",
++				  &cw_bat->charger_psy_name);
++	if (ret)
++		cw_bat->charger_psy_name = NULL;
+ 	return 0;
+ }

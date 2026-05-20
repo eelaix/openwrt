@@ -23,10 +23,15 @@ try_git() {
 		BASE_REV="$(git rev-list ${REBOOT}..HEAD 2>/dev/null | wc -l | awk '{print $1}')"
 		[ $((BASE_REV - GET_REV)) -ge 0 ] && REV="$(git rev-parse HEAD~$((BASE_REV - GET_REV)))"
 		;;
-	*-*-*)  # ISO date format - for approximating when packages were removed or renamed
-		GET_REV="$(git log -n 1 --format="%h" --until "$GET_REV")"
-		;&  # FALLTHROUGH
 	*)
+		# ISO date format - for approximating when packages were removed or renamed
+		# (Bash 3.2 on macOS has no case fallthrough ";&"; use nested case instead.)
+		case "$GET_REV" in
+		*-*-*)
+			GET_REV="$(git log -n 1 --format="%h" --until "$GET_REV")"
+			;;
+		esac
+
 		BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 		ORIGIN="$(git rev-parse --verify --symbolic-full-name ${BRANCH}@{u} 2>/dev/null)"
 		[ -n "$ORIGIN" ] || ORIGIN="$(git rev-parse --verify --symbolic-full-name main@{u} 2>/dev/null)"

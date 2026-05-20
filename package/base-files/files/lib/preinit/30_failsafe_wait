@@ -90,11 +90,13 @@ fs_wait_for_key () {
 
 failsafe_wait() {
 	FAILSAFE=
+	grep -q 'failsafe=' /proc/cmdline && FAILSAFE=true && export FAILSAFE
+	# Skip console wait and messages when failsafe is disabled in image config,
+	# but still honor failsafe= on the kernel command line (recovery).
 	[ "$pi_preinit_no_failsafe" = "y" ] && {
-		fs_wait_for_key "" "" $fs_failsafe_wait_timeout
+		[ "$FAILSAFE" = "true" ] && touch /tmp/failsafe
 		return
 	}
-	grep -q 'failsafe=' /proc/cmdline && FAILSAFE=true && export FAILSAFE
 	if [ "$FAILSAFE" != "true" ]; then
 		fs_wait_for_key f 'to enter failsafe mode' $fs_failsafe_wait_timeout && FAILSAFE=true
 		[ -f "/tmp/failsafe_button" ] && FAILSAFE=true && echo "- failsafe button "$(cat /tmp/failsafe_button)" was pressed -"

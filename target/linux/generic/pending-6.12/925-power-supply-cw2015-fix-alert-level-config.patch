@@ -1,0 +1,49 @@
+From: OpenWrt <openwrt@openwrt.org>
+Subject: power: supply: cw2015: fix alert level threshold and add DT config
+
+Fix a typo in cw_init() where ~CW2015_ATHD() was used instead of
+CW2015_ATHD(), causing all ATHD bits to be set (threshold=31%) regardless
+of the configured alert_level value. The ~ incorrectly inverts the bitmask.
+
+Add support for the "cellwise,alert-level" DT property so the alert
+threshold can be configured per board. When omitted, defaults to 0
+(alert disabled).
+
+Read the property with device_property_read_u32(): Devicetree cells are
+typically 32-bit, so device_property_read_u8() fails (-EINVAL) on
+cellwise,alert-level = <N> and alert_level was always left at 0.
+
+The CW2015 ALRT pin is asserted (low) when SoC drops below ATHD,
+where ATHD is 0-31 representing 0%-31% in 1% steps.
+
+Signed-off-by: OpenWrt <openwrt@openwrt.org>
+
+--- a/drivers/power/supply/cw2015_battery.c
++++ b/drivers/power/supply/cw2015_battery.c
+@@ -176,7 +176,7 @@ static int cw_init(struct cw_battery *cw_bat)
+ 	if ((reg_val & CW2015_MASK_ATHD) != CW2015_ATHD(cw_bat->alert_level)) {
+ 		dev_dbg(cw_bat->dev, "Setting new alert level\n");
+ 		reg_val &= ~CW2015_MASK_ATHD;
+-		reg_val |= ~CW2015_ATHD(cw_bat->alert_level);
++		reg_val |= CW2015_ATHD(cw_bat->alert_level);
+ 		ret = regmap_write(cw_bat->regmap, CW2015_REG_CONFIG, reg_val);
+ 		if (ret)
+ 			return ret;
+@@ -648,6 +648,18 @@ static int cw2015_parse_properties(struct cw_battery *cw_bat)
+ 				  &cw_bat->charger_psy_name);
+ 	if (ret)
+ 		cw_bat->charger_psy_name = NULL;
++
++	u32 alert_level_u32;
++
++	ret = device_property_read_u32(dev, "cellwise,alert-level",
++				       &alert_level_u32);
++	if (ret) {
++		cw_bat->alert_level = 0;
++	} else if (alert_level_u32 > 31) {
++		cw_bat->alert_level = 31;
++	} else {
++		cw_bat->alert_level = (u8)alert_level_u32;
++	}
+ 	return 0;
+ }

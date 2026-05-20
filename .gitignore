@@ -35,3 +35,14 @@ git-src
 .cproject
 .ccache
 .vscode*
+package/luci-app-tbmqtt
+package/utils/thingsboard-mqtt
+sha256sums
+CLAUDE.md
+.deepseek/
+target/linux/ramips/mt76x8/config-6.12
+target/linux/ramips/mt7620/config-6.12
+target/linux/ramips/mt7621/config-6.12
+target/linux/ramips/rt288x/config-6.12
+target/linux/ramips/rt305x/config-6.12
+target/linux/ramips/rt3883/config-6.12
