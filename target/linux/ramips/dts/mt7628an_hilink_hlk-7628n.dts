@@ -4,42 +4,231 @@
 
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/leds/common.h>
 
 / {
 	compatible = "hilink,hlk-7628n", "mediatek,mt7628an-soc";
 	model = "HILINK HLK-7628N";
 
-	keys {
+	/*
+	 * Single-cell pack model shared by CW2015 (fuel gauge) and BQ25601 (charger).
+	 * PKCELL INR14430 800mAh 3.7V Li-ion.
+	 * 0.2C standard charge: CC = 160mA, precharge/termination = 64mA (hw min).
+	 */
+	hlk_bat: battery {
+		compatible = "simple-battery";
+		constant-charge-current-max-microamp = <600000>;
+		constant-charge-voltage-max-microvolt = <4200000>;
+		precharge-current-microamp = <60000>;
+		charge-term-current-microamp = <60000>;
+		charge-full-design-microamp-hours = <800000>;
+	};
+
+	aliases {
+		led-boot = &led_p0;
+		led-wlan = &led_wlan;
+		serial1 = &uart1;
+	};
+
+keys {
 		compatible = "gpio-keys";
 
-		reset {
-			label = "reset";
-			gpios = <&gpio 38 GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_RESTART>;
+		evt_anti0 {
+			label = "evt_anti0";
+			gpios = <&gpio 25 GPIO_ACTIVE_LOW>;
+			linux,code = <BTN_0>;
+			debounce-interval = <60>;
+		};
+		evt_anti1 {
+			label = "evt_anti1";
+			gpios = <&gpio 26 GPIO_ACTIVE_LOW>;
+			linux,code = <BTN_1>;
+			debounce-interval = <60>;
+		};
+		evt_hitp0 {
+			label = "evt_hitp0";
+			gpios = <&gpio 27 GPIO_ACTIVE_LOW>;
+			linux,code = <BTN_2>;
+			debounce-interval = <60>;
+		};
+		evt_hitp1 {
+			label = "evt_hitp1";
+			gpios = <&gpio 28 GPIO_ACTIVE_LOW>;
+			linux,code = <BTN_3>;
+			debounce-interval = <60>;
+		};
+		evt_acsta {
+			label = "evt_acsta";
+			gpios = <&gpio 29 GPIO_ACTIVE_LOW>;
+			linux,code = <BTN_4>;
+			debounce-interval = <60>;
 		};
 	};
 
 	leds {
 		compatible = "gpio-leds";
 
-		wlan {
+		/*
+		 * 主继电器 S1：原理图为集电极开路/灌电流结构——GPIO11 低电平时光耦 LED 导通、
+		 * 继电器吸合；高电平关断。故使用 GPIO_ACTIVE_LOW（逻辑“亮/开”= 物理低）。
+		 * default-state = off → 逻辑灭 → 物理高 → 继电器释放。
+		 * 同时见 &state_default：GPIO11 上拉，降低复位至 gpio-leds 探测前的毛刺吸合风险。
+		 */
+		sw_key {
+			label = "sw_key";
+			gpios = <&gpio 11 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+		};
+		lte_key {
+			label = "lte_key";
+			gpios = <&gpio 39 GPIO_ACTIVE_HIGH>;
+			default-state = "off";
+		};
+		lte_pow {
+			label = "lte_pow";
+			gpios = <&gpio 41 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+		/* 上电 ~100ms 快闪；thingsboard-mqtt 在 MQTT 遥测成功后才改写 trigger（慢闪/常亮/灭），未连上则保持快闪 */
+		led_p0: p0led_an {
+			label = "p0led_an";
+			gpios = <&gpio 43 GPIO_ACTIVE_LOW>;
+			default-state = "off";
+			linux,default-trigger = "timer";
+			led-pattern = <100 100>;
+		};
+		led_wlan: wlan {
 			function = LED_FUNCTION_WLAN;
 			color = <LED_COLOR_ID_GREEN>;
-			gpios = <&gpio 44 GPIO_ACTIVE_LOW>;
+			gpios = <&gpio 44 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "phy0tpt";
+			default-state = "on";
 		};
 	};
+
 };
 
 &state_default {
 	gpio {
-		groups = "i2c";
+		groups = "sdmode", "p4led_an", "p2led_an", "p0led_an", "gpio";
 		function = "gpio";
+		/* 11 = sw_key/继电器：上电默认保持高（关断），直至 gpio-leds 探测 */
+		mediatek,pull-up = <11 24 25 26 27 28 29 39 41 43>;
+		mediatek,pull-down = <>;
 	};
+};
+
+&gpio {
+	status = "okay";
+	gpio-input-enable = <24 25 26 27 28 29>;
+
+	gpio-line-names = 
+        "reserved",  // 索引0 → GPIO0
+        "reserved",  // 索引1 → GPIO1
+        "reserved",  // 索引2 → GPIO2
+        "reserved",  // 索引3 → GPIO3
+        "reserved",  // 索引4 → GPIO4
+        "reserved",  // 索引5 → GPIO5
+        "reserved",  // 索引6 → GPIO6
+        "reserved",  // 索引7 → GPIO7
+        "reserved",  // 索引8 → GPIO8
+        "reserved",  // 索引9 → GPIO9
+        "reserved",  // 索引10 → GPIO10
+        "sw_key",    // 索引11 → GPIO11
+        "reserved",  // 索引12 → GPIO12
+        "reserved",  // 索引13 → GPIO13
+        "reserved",  // 索引14 → GPIO14
+        "reserved",  // 索引15 → GPIO15
+        "reserved",  // 索引16 → GPIO16
+        "reserved",  // 索引17 → GPIO17
+        "reserved",  // 索引18 → GPIO18
+        "reserved",  // 索引19 → GPIO19
+        "reserved",  // 索引20 → GPIO20
+        "reserved",  // 索引21 → GPIO21
+        "reserved",  // 索引22 → GPIO22
+        "reserved",  // 索引23 → GPIO23
+        "cw2015_alt",// 索引24 → GPIO24
+        "evt_anti0", // 索引25 → GPIO25
+        "evt_anti1", // 索引26 → GPIO26
+        "evt_hitp0", // 索引27 → GPIO27
+        "evt_hitp1", // 索引28 → GPIO28
+        "evt_acsta", // 索引29 → GPIO29
+        "reserved",  // 索引30 → GPIO30
+        "reserved",  // 索引31 → GPIO31
+        "reserved",  // 索引32 → GPIO32
+        "reserved",  // 索引33 → GPIO33
+        "reserved",  // 索引34 → GPIO34
+        "reserved",  // 索引35 → GPIO35
+        "reserved",  // 索引36 → GPIO36
+        "reserved",  // 索引37 → GPIO37
+        "reserved",  // 索引38 → GPIO38
+        "lte_key",   // 索引39 → GPIO39
+        "reserved",  // 索引40 → GPIO40
+        "lte_pow",   // 索引41 → GPIO41
+        "reserved",  // 索引42 → GPIO42
+        "p0led_an",  // 索引43 → GPIO43
+        "wlan_led",  // 索引44 → GPIO44
+        "reserved",  // 索引45 → GPIO45
+        "reserved",  // 索引46 → GPIO46
+        "reserved",  // 索引47 → GPIO47
+        "reserved",  // 索引48 → GPIO48
+        "reserved",  // 索引49 → GPIO49
+        "reserved",  // 索引50 → GPIO50
+        "reserved",  // 索引51 → GPIO51
+        "reserved",  // 索引52 → GPIO52
+        "reserved",  // 索引53 → GPIO53
+        "reserved",  // 索引54 → GPIO54
+        "reserved",  // 索引55 → GPIO55
+        "reserved",  // 索引56 → GPIO56
+        "reserved",  // 索引57 → GPIO57
+        "reserved",  // 索引58 → GPIO58
+        "reserved",  // 索引59 → GPIO59
+        "reserved",  // 索引60 → GPIO60
+        "reserved",  // 索引61 → GPIO61
+        "reserved",  // 索引62 → GPIO62
+        "reserved",  // 索引63 → GPIO63
+        "reserved",  // 索引64 → GPIO64
+        "reserved",  // 索引65 → GPIO65
+        "reserved",  // 索引66 → GPIO66
+        "reserved",  // 索引67 → GPIO67
+        "reserved",  // 索引68 → GPIO68
+        "reserved",  // 索引69 → GPIO69
+        "reserved",  // 索引70 → GPIO70
+        "reserved",  // 索引71 → GPIO71
+        "reserved",  // 索引72 → GPIO72
+        "reserved",  // 索引73 → GPIO73
+        "reserved",  // 索引74 → GPIO74
+        "reserved",  // 索引75 → GPIO75
+        "reserved",  // 索引76 → GPIO76
+        "reserved",  // 索引77 → GPIO77
+        "reserved",  // 索引78 → GPIO78
+        "reserved",  // 索引79 → GPIO79
+        "reserved",  // 索引80 → GPIO80
+        "reserved",  // 索引81 → GPIO81
+        "reserved",  // 索引82 → GPIO82
+        "reserved",  // 索引83 → GPIO83
+        "reserved",  // 索引84 → GPIO84
+        "reserved",  // 索引85 → GPIO85
+        "reserved",  // 索引86 → GPIO86
+        "reserved",  // 索引87 → GPIO87
+        "reserved",  // 索引88 → GPIO88
+        "reserved",  // 索引89 → GPIO89
+        "reserved",  // 索引90 → GPIO90
+        "reserved",  // 索引91 → GPIO91
+        "reserved",  // 索引92 → GPIO92
+        "reserved",  // 索引93 → GPIO93
+        "reserved",  // 索引94 → GPIO94
+        "reserved";  // 索引95 → GPIO95
+
 };
 
 &uart1 {
 	status = "okay";
+};
+
+&sdhci {
+    status = "disabled";
 };
 
 &spi0 {
@@ -48,7 +237,12 @@
 	flash@0 {
 		compatible = "jedec,spi-nor";
 		reg = <0>;
-		spi-max-frequency = <10000000>;
+		// 自研PCB能跑52M，官方开发板只能跑13M
+		// 193333333/12100000=15.97,DIV16,~12MHz
+		// 193333333/24200000=7.98, DIV8, ~24MHz
+		// 193333333/49000000=3.94, DIV4, ~48MHz
+		// 193333333/97000000=1.99, DIV2, ~96MHz
+		spi-max-frequency = <49000000>;
 		broken-flash-reset;
 
 		partitions {
@@ -98,13 +292,86 @@
 };
 
 &ethernet {
-	nvmem-cells = <&macaddr_factory_28>;
-	nvmem-cell-names = "mac-address";
+	status = "disabled";
 };
 
 &wmac {
 	status = "okay";
+};
 
-	nvmem-cells = <&eeprom_factory_0>;
-	nvmem-cell-names = "eeprom";
+&watchdog {
+    status = "okay";
+    timeout-sec = <30>;
+};
+
+&i2c {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c_pins>;
+
+	tmp102@48 {
+		compatible = "ti,tmp102";
+		reg = <0x48>;
+		label = "tmp102-top";
+		status = "okay";
+	};
+	tmp102@49 {
+		compatible = "ti,tmp102";
+		reg = <0x49>;
+		label = "tmp102-bot";
+		status = "okay";
+	};
+	bq25601@6b {
+		compatible = "ti,bq25601";
+		reg = <0x6b>;
+		monitored-battery = <&hlk_bat>;
+		ti,watchdog-timeout-ms = <0>;
+		input-voltage-limit-microvolt = <4500000>;
+		input-current-limit-microamp = <2000000>;
+		status = "okay";
+	};
+	cw2015@62 {
+		compatible = "cellwise,cw2015";
+		reg = <0x62>;
+		monitored-battery = <&hlk_bat>;
+		cellwise,charger-psy-name = "bq256xx-charger";
+		/*
+		 * Do not set power-supplies to the BQ charger phandle: ti,bq25601 may expose
+		 * multiple power_supply devices from one DT node; cw2015 passes one phandle and
+		 * can trigger power_supply core mismatch / panic on some kernels (e.g. 6.12).
+		 * Dmesg "Failed to get supply state: -19 (-ENODEV)" is handled in-driver by
+		 * target/linux/generic/pending-6.12/783-power-supply-cw2015-handle-ENODEV-supply-state.patch.
+		 */
+		interrupt-parent = <&gpio>;
+		interrupts = <24 IRQ_TYPE_EDGE_FALLING>;
+		cellwise,monitor-interval-ms = <5000>;
+		cellwise,alert-level = <31>;
+		status = "okay";
+        cellwise,battery-profile = /bits/ 8 <0x15 0x7E 0x87 0x4F 0x4C 0x5D 0x63 0x5E 0x58 0x57 0x5D 0x64 0x69 0x64 0x51 0x43 0x39 0x31 0x2F 0x33 0x42 0x4D 0x5C 0x67 0x53 0x7D 0x06 0x66 0x12 0x23 0x7A 0x8F 0xA3 0xAB 0xAD 0xAC 0x3E 0x1A 0x76 0x2E 0x0A 0x80 0x1B 0x52 0x83 0x93 0x9C 0x3B 0x54 0x81 0x9A 0xB1 0x80 0xED 0xCE 0xCB 0x2F 0x00 0x64 0xA5 0xB5 0xC1 0x46 0xAE>;
+	};
+
+};
+
+&usbphy {
+	status = "okay";
+};
+
+&ehci {
+	status = "okay";
+};
+
+&ohci {
+	status = "okay";
+};
+
+&pinctrl {
+	ephy-digital;
+};
+
+&esw {
+    status = "disabled";
+};
+
+&ohci {
+    status = "disabled";
 };
